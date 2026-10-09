@@ -46,9 +46,6 @@
     }
   },
   "client/src/components/Auth/TwoFactorScreen.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
       "count": 1
     }
@@ -261,9 +258,6 @@
     }
   },
   "client/src/components/Chat/Messages/Content/AgentHandoff.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-inline-styles": {
       "count": 1
     },
@@ -479,9 +473,6 @@
     }
   },
   "client/src/components/Chat/Messages/Content/WebSearch.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-inline-styles": {
       "count": 1
     },
@@ -828,9 +819,6 @@
     }
   },
   "client/src/components/Messages/ScrollToBottom.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
       "count": 1
     }
@@ -872,9 +860,6 @@
     }
   },
   "client/src/components/Nav/SettingsTabs/Account/DeleteAccount.tsx": {
-    "design/disabled-recipe": {
-      "count": 2
-    },
     "shadcn/no-restyle": {
       "count": 13
     }
@@ -1008,9 +993,6 @@
     }
   },
   "client/src/components/Prompts/fields/PromptName.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
       "count": 9
     }
@@ -1316,9 +1298,6 @@
     }
   },
   "client/src/components/SidePanel/Memories/MemoryEditDialog.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
       "count": 6
     }
