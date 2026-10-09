@@ -1,0 +1,23 @@
+version: 1.3.17
+
+interface:
+  customWelcome: 'Meo AI'
+  modelSelect: true
+  parameters: true
+  presets: true
+  bookmarks: true
+  multiConvo: true
+  agents:
+    use: true
+    create: true
+    share: false
+    public: false
+  marketplace:
+    use: false
+
+registration:
+  socialLogins: ['openid']
+
+# This file is intentionally small. Start from the current upstream
+# librechat.example.yaml for deployment-wide defaults, then apply only the Meo-specific
+# choices above. Do not duplicate provider API keys here; Meo Account owns BYOK secrets.
