@@ -3405,5 +3405,20 @@
   "com_ui_tool_approval_connection_unavailable": "Approval cannot be remembered for this connection. Each call requires review.",
   "com_ui_tool_approval_remember_disabled": "Remembered approvals are disabled. Each call requires review.",
   "com_ui_tool_approval_storage_unavailable": "Remembered approval is unavailable. This approval will apply only to this call.",
-  "com_ui_tool_approval_background_unavailable": "Background launches cannot teach approval. Approve a successful foreground call to remember this tool."
+  "com_ui_tool_approval_background_unavailable": "Background launches cannot teach approval. Approve a successful foreground call to remember this tool.",
+  "meo_web_title": "Meo AI",
+  "meo_web_account_control": "Your Meo Account connections stay under account control.",
+  "meo_web_new_chat": "New chat",
+  "meo_web_connection": "Provider connection",
+  "meo_web_choose_connection": "Choose a connection",
+  "meo_web_model": "Model",
+  "meo_web_model_id": "Model ID",
+  "meo_web_model_manual_fallback": "This provider does not list models. Enter a model ID manually.",
+  "meo_web_key_hint": "Key: {{hint}}",
+  "meo_web_loading": "Loading Meo Account connections…",
+  "meo_web_no_connections": "No Meo Account connections are available. Add one in Account settings.",
+  "meo_web_message_placeholder": "Message Meo AI",
+  "meo_web_message": "Message",
+  "meo_web_thinking": "Thinking…",
+  "meo_web_send": "Send"
 }

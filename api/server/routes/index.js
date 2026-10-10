@@ -44,10 +44,12 @@ const mcp = require('./mcp');
 const rum = require('./rum');
 const insights = require('./insights');
 const meoActivity = require('./meoActivity');
+const meo = require('./meo');
 
 module.exports = {
   insights,
   meoActivity,
+  meo,
   rum,
   mcp,
   auth,

@@ -42,6 +42,11 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
+const loadMeoChatView = () =>
+  importWithRecovery(() => import('~/components/Meo/MeoChat')).then((m) => ({
+    Component: m.default,
+  }));
+
 const loadInsightsView = () =>
   importWithRecovery(() => import('~/components/Insights')).then((m) => ({
     Component: m.default,
@@ -143,6 +148,14 @@ export const router = createBrowserRouter(
                 {
                   index: true,
                   element: <Navigate to="/c/new" replace={true} />,
+                },
+                {
+                  path: 'new',
+                  lazy: loadMeoChatView,
+                },
+                {
+                  path: 'meo',
+                  lazy: loadMeoChatView,
                 },
                 {
                   path: 'c/:conversationId?',

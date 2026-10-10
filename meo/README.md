@@ -1,29 +1,78 @@
 # Meo AI Web integration
 
-This fork keeps LibreChat as the web chat implementation and adds only the integration required for the Meo AI product.
+This is a separate LibreChat fork. LibreChat supplies the responsive chat shell,
+conversation renderer, and account session; Meo-specific behavior is isolated in
+`meo/` plus small route and router registrations.
 
-## Product boundary
+## Account ownership and login
 
-- LibreChat owns the generic web chat UI, message rendering, attachments, model-selection surfaces and generic agent/MCP UI.
-- `QwQdoge/meo-ai` owns Meo AI cloud/device contracts, AgentRun semantics, the native MeoUI client and the local AgentService.
-- Meo Account remains the identity and provider-credential authority. This repository must never persist raw Meo Account provider API keys.
+- Meo Account is the only identity provider and encrypted BYOK authority.
+- LibreChat uses its built-in OpenID Connect login with PKCE. Register the exact
+  callback `${DOMAIN_SERVER}/oauth/openid/callback` in Meo Account.
+- The browser uses the LibreChat same-origin session cookie. OIDC access tokens
+  remain in the server-side session and are forwarded from the API adapter to
+  Meo Account; provider API keys never enter the browser or LibreChat database.
+- `MEO_ACCOUNT_OAUTH_CLIENT_ID` must equal `OPENID_CLIENT_ID`. The broker checks
+  this client identity on every chat consent and invocation.
 
-## Authentication
+## Provider and chat flow
 
-LibreChat already supports generic OpenID Connect and PKCE. Meo Account uses the Supabase Auth OAuth 2.1/OIDC server, so the first integration should use LibreChat's existing OpenID path rather than adding another authentication implementation.
+`/api/meo` reads enabled credential metadata and model metadata through
+`ai-provider-broker`. Model-listing fallback lets a user enter a model ID by
+hand. A chat turn first requests the broker's payload-bound consent preview;
+the UI shows provider, model, purpose, data categories and destination before
+invocation. The browser stores only the selected credential ID and the visible
+conversation. It never receives an Account access token or provider key.
 
-Required deployment configuration is documented in `meo/meo.env.example`.
+The current Account `invoke` contract buffers the provider result. The Meo route
+streams the completed response to the chat view using SSE. It is an SSE transport
+with a buffered upstream response; token-by-token provider streaming requires a
+future Account broker streaming action and is not claimed by this adapter.
 
-The Meo AI Web OAuth client must be registered in Meo Account with an exact redirect URI matching `${DOMAIN_SERVER}/oauth/openid/callback`. Public-client PKCE is preferred; do not ship a client secret to browser code.
+## Deep links and local history
 
-## AI provider calls
+`/new?connection=<credential-id>&model=<model-id>` selects an Account credential
+and model after Meo Account login. Conversations are currently saved in
+browser-local storage scoped to the authenticated LibreChat user. They survive a
+reload on the same browser; cross-device history is a later migration to the
+Meo Cloud conversation API.
 
-Do not copy provider keys from Meo Account into LibreChat's database or environment. The target integration is a Meo-owned backend endpoint that authenticates the current Meo Account session and forwards inference through the Account-owned provider broker.
+## Local startup
 
-The currently deployed Account broker uses one-time payload-bound consent for each inference. That contract is appropriate for isolated Settings actions but too disruptive for ordinary chat. Before making the web frontend depend on it, add a scoped, revocable first-party chat grant in the Meo AI/Account contract. Do not silently bypass the current consent check.
+Use Node 24+ and the package manager declared by the upstream repository. From
+the fork root:
 
-## Upstream maintenance
+```sh
+cp .env.example .env
+cp meo/librechat.meo.example.yaml librechat.yaml
+```
 
-Keep `upstream` pointing to `LibreChat-AI/LibreChat`. Prefer small Meo-specific adapters/configuration over broad edits so upstream merges remain practical.
+Set `MONGO_URI`, `DOMAIN_CLIENT=http://localhost:3080`,
+`DOMAIN_SERVER=http://localhost:3080`, `OPENID_ISSUER`, `OPENID_CLIENT_ID`,
+`OPENID_USE_PKCE=true`, `OPENID_REUSE_TOKENS=true`, `MEO_ACCOUNT_URL`, and
+`MEO_ACCOUNT_OAUTH_CLIENT_ID` in `.env`. Leave `OPENID_CLIENT_SECRET` empty for
+the registered public PKCE client. Register `http://localhost:3080/oauth/openid/callback`
+for local development. Never put provider keys in `.env` or `librechat.yaml`.
 
-Never remove the upstream MIT license or notices.
+Install and build the shared packages, then start MongoDB/Redis and both app
+processes:
+
+```sh
+npm install
+npm run build:data-provider
+npm run build:data-schemas
+npm run build:api
+npm run build:client-package
+npm run backend:dev
+```
+
+In a second terminal, run `npm run b:client:dev`, then open
+`http://localhost:3080/new`. The route requires a working Meo Account OIDC
+client and a signed-in Account with at least one enabled provider connection.
+
+## AgentRun seam
+
+The browser chat does not call local AgentService. The existing Meo Cloud client
+remains the future entry point for AgentRun creation and replayable SSE at
+`/v1/agent-runs/events`; reconnect must resume the same `run_id`. First-version
+ordinary chat does not depend on AgentRun availability.
