@@ -28,6 +28,7 @@ function AuthLayout({
   error: TranslationKeys | null;
 }) {
   const localize = useLocalize();
+  const isMeoAi = startupConfig?.appTitle === 'Meo AI';
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const isRegister = pathname.includes('register');
@@ -88,15 +89,27 @@ function AuthLayout({
   };
 
   return (
-    <div className="bg-surface-primary relative flex min-h-screen flex-col">
+    <div
+      className="bg-surface-primary relative flex min-h-screen flex-col"
+      data-meo-auth-shell={isMeoAi ? '' : undefined}
+    >
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
-          <img
-            src="assets/logo.svg"
-            className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
-          />
+        <div className="mt-6 h-10 w-full bg-cover" data-meo-auth-brand={isMeoAi ? '' : undefined}>
+          {isMeoAi ? (
+            <div data-meo-auth-brand-lockup="" aria-label={startupConfig?.appTitle}>
+              <span data-meo-auth-brand-mark="" aria-hidden="true">
+                {startupConfig?.appTitle?.slice(-2)}
+              </span>
+              <span data-meo-auth-brand-name="">{startupConfig?.appTitle}</span>
+            </div>
+          ) : (
+            <img
+              src="assets/logo.svg"
+              className="h-full w-full object-contain"
+              alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            />
+          )}
         </div>
       </BlinkAnimation>
       <DisplayError />
@@ -110,6 +123,7 @@ function AuthLayout({
             'bg-surface-primary overflow-hidden px-6 py-4 sm:rounded-lg',
             isTwoFactorSetup ? 'w-11/12 max-w-lg' : 'w-authPageWidth sm:max-w-md',
           )}
+          data-meo-auth-card={isMeoAi ? '' : undefined}
         >
           {!hasStartupConfigError && !isFetching && header && (
             <h1

@@ -36,6 +36,7 @@ type Options = {
    *  set: a button needs both, not just the global switch. */
   providers?: string[];
   googleLoginEnabled?: boolean;
+  appTitle?: string;
   /** Partial on purpose: a fixture sets the policies under test, and the field
    *  names are still checked against the real interface config. */
   interfaceConfig?: Partial<NonNullable<TStartupConfig['interface']>>;
@@ -48,10 +49,11 @@ function setup({
   socialLoginEnabled = false,
   providers,
   googleLoginEnabled,
+  appTitle = 'LibreChat',
   interfaceConfig,
 }: Options) {
   const startupConfig = {
-    appTitle: 'LibreChat',
+    appTitle,
     socialLoginEnabled,
     socialLogins: providers ?? (socialLoginEnabled ? ['google'] : []),
     googleLoginEnabled: googleLoginEnabled ?? socialLoginEnabled,
@@ -186,5 +188,13 @@ describe('AuthLayout legal placement', () => {
 
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();
+  });
+
+  test('Meo AI uses the product brand lockup and scoped auth theme', () => {
+    setup({ pathname: 'login', appTitle: 'Meo AI', socialLoginEnabled: true });
+
+    expect(screen.getByLabelText('Meo AI')).toBeInTheDocument();
+    expect(document.querySelector('[data-meo-auth-shell] [data-meo-auth-card]')).not.toBeNull();
+    expect(screen.getByText('Continue with Google')).toBeInTheDocument();
   });
 });

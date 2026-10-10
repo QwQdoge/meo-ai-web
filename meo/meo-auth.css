@@ -1,0 +1,87 @@
+/* Meo login palette follows the Account and desktop shell: warm lavender surfaces,
+ * a plum primary action, soft borders and the pink AI mark. It is gated by the
+ * Meo AI app title so this small fork patch does not restyle upstream deployments. */
+[data-meo-auth-shell] {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(250 235 246 / 72%), transparent 56%),
+    linear-gradient(135deg, #faf6fb 0%, #f5eff9 100%);
+}
+
+[data-meo-auth-brand] {
+  z-index: 1;
+  height: auto;
+  margin-top: 2rem;
+}
+
+[data-meo-auth-brand-lockup] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  color: #29222e;
+}
+
+[data-meo-auth-brand-mark] {
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  place-items: center;
+  border-radius: 1rem;
+  background: #ffd9e5;
+  color: #6e4255;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.08em;
+}
+
+[data-meo-auth-brand-name] {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+[data-meo-auth-card] {
+  margin: 1.5rem 1rem;
+  border: 1px solid #d9cddd;
+  border-radius: 1.75rem !important;
+  background: rgb(255 250 255 / 88%) !important;
+  padding: 2rem !important;
+  box-shadow: 0 1.25rem 3rem rgb(70 48 83 / 9%);
+  backdrop-filter: blur(16px);
+}
+
+[data-meo-auth-card] h1 {
+  color: #302638;
+}
+
+[data-meo-auth-shell] [data-testid='openid'] {
+  min-height: 3.25rem;
+  justify-content: center;
+  gap: 0.75rem;
+  border-color: #69548c;
+  border-radius: 9999px;
+  background: #69548c;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0.25rem 0.7rem rgb(83 61 115 / 16%);
+}
+
+[data-meo-auth-shell] [data-testid='openid']:hover {
+  border-color: #594477;
+  background: #594477;
+}
+
+[data-meo-auth-shell] [data-testid='openid'] svg {
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  [data-meo-auth-brand] {
+    margin-top: 1.5rem;
+  }
+
+  [data-meo-auth-card] {
+    margin: 1rem;
+    padding: 1.5rem !important;
+  }
+}
