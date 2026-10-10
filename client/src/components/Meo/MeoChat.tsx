@@ -14,7 +14,7 @@ type Connection = {
 };
 type Model = { id: string; name: string; description?: string };
 type Message = { role: 'user' | 'assistant'; content: string };
-type SavedConversation = { id: string; title: string; updatedAt: number; messages: Message[] };
+type Conversation = { id: string; title: string; createdAt: string; updatedAt: string };
 type Consent = {
   requestId: string;
   payloadSha256: string;
@@ -34,10 +34,11 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
   const value = await response.json().catch(() => ({}));
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(
       typeof value.error === 'string' ? value.error : `Request failed (${response.status})`,
     );
+  }
   return value as T;
 }
 
@@ -45,14 +46,14 @@ export default function MeoChat() {
   const { t } = useTranslation();
   const { user } = useAuthContext();
   const [searchParams, setSearchParams] = useSearchParams();
-  const storageKey = `meo-ai-web:v1:${user?.id ?? 'anonymous'}`;
-  const [history, setHistory] = useState<SavedConversation[]>([]);
-  const historyRef = useRef<SavedConversation[]>([]);
+  const requestedConnection = searchParams.get('connection') ?? '';
+  const requestedModel = searchParams.get('model') ?? '';
+  const selectedConversationKey = `meo-ai-web:selected:${user?.id ?? 'anonymous'}`;
+  const [history, setHistory] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState('');
-  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [credentialId, setCredentialId] = useState(searchParams.get('connection') ?? '');
-  const [model, setModel] = useState(searchParams.get('model') ?? '');
+  const [credentialId, setCredentialId] = useState(requestedConnection);
+  const [model, setModel] = useState(requestedModel);
   const modelRef = useRef(model);
   modelRef.current = model;
   const [models, setModels] = useState<Model[]>([]);
@@ -62,48 +63,22 @@ export default function MeoChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const skipHistoryLoadRef = useRef('');
 
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(storageKey) ?? '{}');
-      const conversations = Array.isArray(saved.conversations)
-        ? (saved.conversations as SavedConversation[])
-        : [];
-      const activeId = typeof saved.activeId === 'string' ? saved.activeId : '';
-      const active = conversations.find((item) => item.id === activeId);
-      setHistory(conversations);
-      historyRef.current = conversations;
-      setActiveConversationId(activeId || crypto.randomUUID());
-      setMessages(active?.messages ?? []);
-    } catch {
-      setHistory([]);
-      historyRef.current = [];
-      setActiveConversationId(crypto.randomUUID());
-      setMessages([]);
-    } finally {
-      setHistoryLoaded(true);
-    }
-  }, [storageKey]);
-  useEffect(() => {
-    if (!user?.id || !historyLoaded || !activeConversationId || messages.length === 0) return;
-    const title = messages.find((item) => item.role === 'user')?.content.slice(0, 80) || 'New chat';
-    const conversation: SavedConversation = {
-      id: activeConversationId,
-      title,
-      updatedAt: Date.now(),
-      messages: messages.slice(-200),
-    };
-    const next = [
-      conversation,
-      ...historyRef.current.filter((item) => item.id !== activeConversationId),
-    ].slice(0, 50);
-    historyRef.current = next;
-    setHistory(next);
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify({ activeId: activeConversationId, conversations: next }),
-    );
-  }, [activeConversationId, historyLoaded, messages, storageKey, user?.id]);
+  useEffect(() => () => streamAbortRef.current?.abort(), []);
+
+  const updateDeepLink = useCallback(
+    (connection: string, selectedModel: string) => {
+      const next = new URLSearchParams();
+      if (connection) next.set('connection', connection);
+      if (selectedModel) next.set('model', selectedModel);
+      setSearchParams(next, { replace: true });
+    },
+    [setSearchParams],
+  );
+
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -111,19 +86,53 @@ export default function MeoChat() {
       .then(({ connections: result }) => {
         if (!active) return;
         setConnections(result);
-        const requested = searchParams.get('connection');
-        const selected = result.find((item) => item.id === requested) ?? result[0];
-        if (selected) setCredentialId(selected.id);
-        if (!searchParams.get('model') && selected?.defaultModel) setModel(selected.defaultModel);
+        const requested = result.find((item) => item.id === requestedConnection);
+        const selected = requested ?? result[0];
+        if (!selected) {
+          setCredentialId('');
+          setModel('');
+          return;
+        }
+        setCredentialId(selected.id);
+        if (!requested && requestedConnection) {
+          setError(t('meo_web_invalid_connection_fallback'));
+          setModel(selected.defaultModel);
+          updateDeepLink(selected.id, selected.defaultModel);
+        } else if (!requestedModel) {
+          setModel(selected.defaultModel);
+        }
       })
       .catch((reason: Error) => active && setError(reason.message))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [model, searchParams]);
+  }, [requestedConnection, requestedModel, t, updateDeepLink]);
+
   useEffect(() => {
-    if (!credentialId) return;
+    let active = true;
+    setHistoryLoading(true);
+    json<{ conversations: Conversation[] }>('/api/meo/conversations')
+      .then(({ conversations: result }) => {
+        if (!active) return;
+        setHistory(result);
+        const savedId = localStorage.getItem(selectedConversationKey) ?? '';
+        const initial = result.find((item) => item.id === savedId) ?? result[0];
+        if (initial) setActiveConversationId(initial.id);
+      })
+      .catch((reason: Error) => active && setError(reason.message))
+      .finally(() => active && setHistoryLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [selectedConversationKey]);
+
+  useEffect(() => {
+    if (!credentialId) {
+      setModels([]);
+      setModelDiscovery('idle');
+      return;
+    }
     let active = true;
     setModelDiscovery('idle');
     json<{ supported: boolean; models: Model[] }>(
@@ -133,48 +142,81 @@ export default function MeoChat() {
         if (!active) return;
         setModels(result.models);
         setModelDiscovery(result.supported ? 'ready' : 'unsupported');
-        if (!modelRef.current && result.models[0]) setModel(result.models[0].id);
+        if (result.supported && result.models.length > 0) {
+          const found = result.models.find((item) => item.id === modelRef.current);
+          const fallback =
+            result.models.find(
+              (item) => item.id === connections.find((c) => c.id === credentialId)?.defaultModel,
+            ) ?? result.models[0];
+          if (!found) {
+            if (requestedModel) setError(t('meo_web_invalid_model_fallback'));
+            setModel(fallback.id);
+            updateDeepLink(credentialId, fallback.id);
+          }
+        } else if (!modelRef.current) {
+          setModel(connections.find((item) => item.id === credentialId)?.defaultModel ?? '');
+        }
       })
       .catch((reason: Error) => active && setError(reason.message));
     return () => {
       active = false;
     };
-  }, [credentialId]);
+  }, [connections, credentialId, requestedModel, t, updateDeepLink]);
+
+  useEffect(() => {
+    let active = true;
+    if (!activeConversationId) {
+      setMessages([]);
+      return () => {
+        active = false;
+      };
+    }
+    localStorage.setItem(selectedConversationKey, activeConversationId);
+    if (skipHistoryLoadRef.current === activeConversationId) {
+      skipHistoryLoadRef.current = '';
+      return;
+    }
+    setMessages([]);
+    json<{ messages: Message[] }>(
+      `/api/meo/conversations/${encodeURIComponent(activeConversationId)}/messages`,
+    )
+      .then(({ messages: result }) => active && setMessages(result))
+      .catch((reason: Error) => active && setError(reason.message));
+    return () => {
+      active = false;
+    };
+  }, [activeConversationId, selectedConversationKey]);
 
   const selected = useMemo(
     () => connections.find((item) => item.id === credentialId),
     [connections, credentialId],
   );
+
   const changeConnection = useCallback(
     (id: string) => {
+      const nextModel = connections.find((item) => item.id === id)?.defaultModel ?? '';
       setCredentialId(id);
-      setModel(connections.find((item) => item.id === id)?.defaultModel ?? '');
-      const next = new URLSearchParams(searchParams);
-      if (id) next.set('connection', id);
-      else next.delete('connection');
-      setSearchParams(next, { replace: true });
+      setModel(nextModel);
+      updateDeepLink(id, nextModel);
     },
-    [connections, searchParams, setSearchParams],
+    [connections, updateDeepLink],
   );
 
-  const startNewChat = () => {
-    const id = crypto.randomUUID();
-    setActiveConversationId(id);
-    setMessages([]);
-    if (user?.id)
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({ activeId: id, conversations: historyRef.current }),
-      );
+  const changeModel = (value: string) => {
+    setModel(value);
+    updateDeepLink(credentialId, value);
   };
-  const openConversation = (conversation: SavedConversation) => {
+
+  const startNewChat = () => {
+    setActiveConversationId('');
+    setMessages([]);
+    setDraft('');
+    localStorage.removeItem(selectedConversationKey);
+  };
+
+  const openConversation = (conversation: Conversation) => {
+    setError('');
     setActiveConversationId(conversation.id);
-    setMessages(conversation.messages);
-    if (user?.id)
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({ activeId: conversation.id, conversations: historyRef.current }),
-      );
   };
 
   async function submit(event: FormEvent) {
@@ -194,8 +236,27 @@ export default function MeoChat() {
         `${consent.providerName} · ${consent.model}\n${consent.purpose}\n${consent.dataCategories.join(', ')}\n${consent.destination}\n\n${consent.promptCharacters} characters will be sent to this provider. Continue?`,
       );
       if (!approved) return;
+
+      let conversationId = activeConversationId;
+      if (!conversationId) {
+        const created = await json<{ conversation: Conversation }>('/api/meo/conversations', {
+          method: 'POST',
+          body: JSON.stringify({ title: prompt.slice(0, 80) }),
+        });
+        conversationId = created.conversation.id;
+        skipHistoryLoadRef.current = conversationId;
+        setHistory((current) => [created.conversation, ...current]);
+        setActiveConversationId(conversationId);
+      }
+      await json('/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages', {
+        method: 'POST',
+        body: JSON.stringify({ role: 'user', content: prompt }),
+      });
       setMessages(nextMessages);
       setDraft('');
+
+      const abortController = new AbortController();
+      streamAbortRef.current = abortController;
       const response = await fetch('/api/meo/chat/stream', {
         method: 'POST',
         credentials: 'same-origin',
@@ -206,6 +267,7 @@ export default function MeoChat() {
           messages: nextMessages,
           consent,
         }),
+        signal: abortController.signal,
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
@@ -217,6 +279,8 @@ export default function MeoChat() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let assistantText = '';
+      let completed = false;
       while (true) {
         const { value, done } = await reader.read();
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
@@ -228,6 +292,7 @@ export default function MeoChat() {
           const data = block.match(/^data:\s*(.+)$/m)?.[1];
           if (event === 'delta' && data) {
             const chunk = JSON.parse(data).text as string;
+            assistantText += chunk;
             setMessages((current) =>
               current.map((message, index) =>
                 index === current.length - 1 && message.role === 'assistant'
@@ -235,14 +300,37 @@ export default function MeoChat() {
                   : message,
               ),
             );
+          } else if (event === 'error' && data) {
+            const failure = JSON.parse(data) as { message?: string };
+            throw new Error(failure.message ?? t('meo_web_stream_failed'));
+          } else if (event === 'done') {
+            completed = true;
           }
           boundary = buffer.indexOf('\n\n');
         }
         if (done) break;
       }
+      if (!completed) throw new Error(t('meo_web_stream_incomplete'));
+      if (assistantText) {
+        await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ role: 'assistant', content: assistantText }),
+        });
+      }
+      setHistory((current) => {
+        const item = current.find((conversation) => conversation.id === conversationId);
+        if (!item) return current;
+        return [
+          { ...item, updatedAt: new Date().toISOString() },
+          ...current.filter((conversation) => conversation.id !== conversationId),
+        ];
+      });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Chat request failed');
+      if (!(reason instanceof DOMException && reason.name === 'AbortError')) {
+        setError(reason instanceof Error ? reason.message : t('meo_web_chat_failed'));
+      }
     } finally {
+      streamAbortRef.current = null;
       setBusy(false);
     }
   }
@@ -277,7 +365,7 @@ export default function MeoChat() {
               aria-label={t('meo_web_model')}
               className="bg-surface-primary min-w-40 rounded-lg border px-3 py-2"
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => changeModel(event.target.value)}
             >
               {models.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -290,7 +378,7 @@ export default function MeoChat() {
               aria-label={t('meo_web_model_id')}
               className="bg-surface-primary min-w-40 rounded-lg border px-3 py-2"
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => changeModel(event.target.value)}
               placeholder={t('meo_web_model_id')}
             />
           )}
@@ -305,7 +393,7 @@ export default function MeoChat() {
         </p>
       )}
       {history.length > 0 && (
-        <nav aria-label="Conversation history" className="flex gap-2 overflow-x-auto pb-1">
+        <nav aria-label={t('meo_web_history')} className="flex gap-2 overflow-x-auto pb-1">
           {history.map((conversation) => (
             <button
               key={conversation.id}
@@ -313,16 +401,16 @@ export default function MeoChat() {
               className={`max-w-56 truncate rounded-full border px-3 py-1.5 text-sm ${conversation.id === activeConversationId ? 'bg-surface-secondary' : ''}`}
               onClick={() => openConversation(conversation)}
             >
-              {conversation.title}
+              {conversation.title || t('meo_web_untitled_chat')}
             </button>
           ))}
         </nav>
       )}
       <section
-        aria-label="Conversation"
+        aria-label={t('meo_web_conversation')}
         className="bg-surface-primary min-h-0 flex-1 space-y-5 overflow-y-auto rounded-xl border p-4 md:p-6"
       >
-        {loading && <p>{t('meo_web_loading')}</p>}
+        {(loading || historyLoading) && <p>{t('meo_web_loading')}</p>}
         {!loading && connections.length === 0 && <p>{t('meo_web_no_connections')}</p>}
         {messages.map((message, index) => (
           <article

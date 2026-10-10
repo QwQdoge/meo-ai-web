@@ -106,6 +106,50 @@ describe('MeoAccountProviderClient', () => {
     expect(JSON.stringify(invocation)).not.toContain('account-session-token');
   });
 
+  it('requests a real Account SSE stream and propagates browser cancellation', async () => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: delta\n\n'));
+        controller.close();
+      },
+    });
+    fetcher.mockResolvedValueOnce(
+      new Response(source, { headers: { 'Content-Type': 'text/event-stream' } }),
+    );
+    const controller = new AbortController();
+    const consent = {
+      requestId: 'request-id',
+      payloadSha256: 'hash',
+      confirmationVersion: 1,
+      provider: 'openai_compatible',
+      providerName: 'OpenLux',
+      model: 'model-a',
+      purpose: 'meo_ai_web_chat',
+      dataCategories: ['chat_text'],
+      destination: 'https://api.openlux.ai/v1/chat/completions',
+      promptCharacters: 2,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const response = await client.streamChat(
+      {
+        credentialId: 'credential-id',
+        model: 'model-a',
+        messages: [{ role: 'user', content: 'Hi' }],
+        consent,
+      },
+      controller.signal,
+    );
+    const request = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(request.action).toBe('stream_invoke');
+    expect(request.model).toBe('model-a');
+    expect(fetcher.mock.calls[0][1]?.signal).toBe(controller.signal);
+    expect(fetcher.mock.calls[0][1]?.headers).toEqual(
+      expect.objectContaining({ Accept: 'text/event-stream' }),
+    );
+    expect(await response.text()).toContain('event: delta');
+    expect(JSON.stringify(request)).not.toContain('account-session-token');
+  });
+
   it('rejects public HTTP origins and malformed chat context', async () => {
     expect(
       () =>

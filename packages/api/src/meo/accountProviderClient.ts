@@ -150,6 +150,62 @@ export class MeoAccountProviderClient {
     return { text: data.text, model: typeof data.model === 'string' ? data.model : input.model };
   }
 
+  async streamChat(
+    input: {
+      credentialId: string;
+      model: string;
+      messages: MeoChatMessage[];
+      consent: MeoConsent;
+    },
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const token = (await this.accessToken()).trim();
+    if (!token) throw new Error('Meo Account session is unavailable');
+    const { userPrompt, categories } = chatPrompt(input.messages);
+    const response = await this.fetcher(`${this.accountUrl}/functions/v1/ai-provider-broker`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'Cache-Control': 'no-store',
+      },
+      body: JSON.stringify({
+        action: 'stream_invoke',
+        credentialId: requiredText(input.credentialId, 'credentialId', 80),
+        clientId: this.clientId,
+        purpose: 'meo_ai_web_chat',
+        dataCategories: categories,
+        model: requiredText(input.model, 'model', 160),
+        userPrompt,
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        consent: {
+          approved: true,
+          confirmedAt: new Date().toISOString(),
+          requestId: input.consent.requestId,
+          payloadSha256: input.consent.payloadSha256,
+          confirmationVersion: input.consent.confirmationVersion,
+        },
+      }),
+      redirect: 'error',
+      cache: 'no-store',
+      signal,
+    });
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : `Meo Account request failed (${response.status})`,
+      );
+    }
+    if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+      throw new Error('Meo Account returned an invalid chat stream');
+    }
+    return response;
+  }
+
   private async call(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const token = (await this.accessToken()).trim();
     if (!token) throw new Error('Meo Account session is unavailable');

@@ -1,28 +1,37 @@
 const express = require('express');
-const { MeoAccountProviderClient } = require('@librechat/api');
+const { MeoAccountProviderClient, MeoCloudConversationClient } = require('@librechat/api');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
 const accountUrl = process.env.MEO_ACCOUNT_URL || 'https://account.meoarch.org';
 const clientId = process.env.MEO_ACCOUNT_OAUTH_CLIENT_ID || '';
+const cloudUrl = process.env.MEO_CLOUD_URL || 'https://ai.meoarch.org';
 
 router.use((_req, res, next) => {
   res.set({ 'Cache-Control': 'no-store' });
   next();
 });
 
-function clientFor(req) {
+function sessionAccessToken(req) {
   const sessionTokens = req.session?.openidTokens;
   const sessionUserId = sessionTokens?.appUserId;
   const requestUserId = req.user?.id || req.user?._id?.toString?.();
-  const accessToken =
-    sessionUserId && requestUserId && sessionUserId !== requestUserId
-      ? ''
-      : sessionTokens?.accessToken || '';
+  if (!sessionUserId || !requestUserId || sessionUserId !== requestUserId) return '';
+  return sessionTokens?.accessToken || '';
+}
+
+function clientFor(req) {
   return new MeoAccountProviderClient({
     accountUrl,
     clientId,
-    accessToken: async () => accessToken,
+    accessToken: async () => sessionAccessToken(req),
+  });
+}
+
+function cloudFor(req) {
+  return new MeoCloudConversationClient({
+    cloudUrl,
+    accessToken: async () => sessionAccessToken(req),
   });
 }
 
@@ -39,6 +48,44 @@ function sendError(res, error) {
 router.get('/connections', requireJwtAuth, async (req, res) => {
   try {
     return res.json({ connections: await clientFor(req).listConnections() });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.get('/conversations', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json({ conversations: await cloudFor(req).listConversations() });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.post('/conversations', requireJwtAuth, async (req, res) => {
+  try {
+    const conversation = await cloudFor(req).createConversation(req.body?.title);
+    return res.status(201).json({ conversation });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.get('/conversations/:conversationId/messages', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json({ messages: await cloudFor(req).listMessages(req.params.conversationId) });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+router.post('/conversations/:conversationId/messages', requireJwtAuth, async (req, res) => {
+  try {
+    const message = await cloudFor(req).appendMessage(
+      req.params.conversationId,
+      req.body?.role,
+      req.body?.content,
+    );
+    return res.status(201).json({ message });
   } catch (error) {
     return sendError(res, error);
   }
@@ -72,26 +119,38 @@ router.post('/chat/invoke', requireJwtAuth, async (req, res) => {
 });
 
 router.post('/chat/stream', requireJwtAuth, async (req, res) => {
+  const controller = new AbortController();
+  const abortOnDisconnect = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.once('close', abortOnDisconnect);
   try {
-    const result = await clientFor(req).invokeChat(req.body);
-    res.status(200).set({
+    const upstream = await clientFor(req).streamChat(req.body, controller.signal);
+    res.status(upstream.status).set({
       'Cache-Control': 'no-store, no-transform',
       'Content-Type': 'text/event-stream; charset=utf-8',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
     res.flushHeaders?.();
-    for (let offset = 0; offset < result.text.length; offset += 96) {
-      res.write(
-        `event: delta\ndata: ${JSON.stringify({ text: result.text.slice(offset, offset + 96) })}\n\n`,
-      );
-      res.flush?.();
-      await new Promise((resolve) => setTimeout(resolve, 12));
+    for await (const chunk of upstream.body) {
+      if (controller.signal.aborted || res.destroyed) break;
+      if (!res.write(chunk)) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
     }
-    res.write(`event: done\ndata: ${JSON.stringify({ model: result.model })}\n\n`);
-    return res.end();
+    if (!res.destroyed && !res.writableEnded) res.end();
   } catch (error) {
+    if (controller.signal.aborted || res.destroyed) return;
+    if (res.headersSent) {
+      res.write(
+        `event: error\ndata: ${JSON.stringify({ message: 'Meo Account streaming failed.' })}\n\n`,
+      );
+      return res.end();
+    }
     return sendError(res, error);
+  } finally {
+    res.removeListener('close', abortOnDisconnect);
   }
 });
 

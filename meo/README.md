@@ -11,7 +11,8 @@ conversation renderer, and account session; Meo-specific behavior is isolated in
   callback `${DOMAIN_SERVER}/oauth/openid/callback` in Meo Account.
 - The browser uses the LibreChat same-origin session cookie. OIDC access tokens
   remain in the server-side session and are forwarded from the API adapter to
-  Meo Account; provider API keys never enter the browser or LibreChat database.
+  Meo Account and Meo Cloud; provider API keys never enter the browser or
+  LibreChat database.
 - `MEO_ACCOUNT_OAUTH_CLIENT_ID` must equal `OPENID_CLIENT_ID`. The broker checks
   this client identity on every chat consent and invocation.
 
@@ -21,21 +22,22 @@ conversation renderer, and account session; Meo-specific behavior is isolated in
 `ai-provider-broker`. Model-listing fallback lets a user enter a model ID by
 hand. A chat turn first requests the broker's payload-bound consent preview;
 the UI shows provider, model, purpose, data categories and destination before
-invocation. The browser stores only the selected credential ID and the visible
-conversation. It never receives an Account access token or provider key.
+invocation. The browser stores only the selected credential ID and visible chat
+state. It never receives an Account access token or provider key.
 
-The current Account `invoke` contract buffers the provider result. The Meo route
-streams the completed response to the chat view using SSE. It is an SSE transport
-with a buffered upstream response; token-by-token provider streaming requires a
-future Account broker streaming action and is not claimed by this adapter.
+The Account broker requests `stream: true` from OpenAI-compatible providers,
+normalizes their SSE into token deltas, and sends those events through the Meo
+same-origin API to the browser. Browser disconnects abort the provider request.
+Other Account provider styles can add their own stream adapter later.
 
-## Deep links and local history
+## Deep links and cloud history
 
 `/new?connection=<credential-id>&model=<model-id>` selects an Account credential
-and model after Meo Account login. Conversations are currently saved in
-browser-local storage scoped to the authenticated LibreChat user. They survive a
-reload on the same browser; cross-device history is a later migration to the
-Meo Cloud conversation API.
+and model after Meo Account login. The adapter verifies the connection belongs
+to the signed-in user and confirms the model is in the connection's discovered
+models when discovery is supported. Invalid values return to the selectors.
+Conversation and message history lives in Meo Cloud and is scoped to the verified
+Account user ID. `localStorage` keeps only the active conversation pointer.
 
 ## Local startup
 
@@ -50,7 +52,8 @@ cp meo/librechat.meo.example.yaml librechat.yaml
 Set `MONGO_URI`, `DOMAIN_CLIENT=http://localhost:3080`,
 `DOMAIN_SERVER=http://localhost:3080`, `OPENID_ISSUER`, `OPENID_CLIENT_ID`,
 `OPENID_USE_PKCE=true`, `OPENID_REUSE_TOKENS=true`, `MEO_ACCOUNT_URL`, and
-`MEO_ACCOUNT_OAUTH_CLIENT_ID` in `.env`. Leave `OPENID_CLIENT_SECRET` empty for
+`MEO_ACCOUNT_OAUTH_CLIENT_ID` in `.env`. Set `MEO_CLOUD_URL` to the Meo Cloud
+origin as well. Leave `OPENID_CLIENT_SECRET` empty for
 the registered public PKCE client. Register `http://localhost:3080/oauth/openid/callback`
 for local development. Never put provider keys in `.env` or `librechat.yaml`.
 
