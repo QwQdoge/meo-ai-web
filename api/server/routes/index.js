@@ -43,9 +43,11 @@ const user = require('./user');
 const mcp = require('./mcp');
 const rum = require('./rum');
 const insights = require('./insights');
+const meoActivity = require('./meoActivity');
 
 module.exports = {
   insights,
+  meoActivity,
   rum,
   mcp,
   auth,
