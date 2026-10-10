@@ -71,7 +71,7 @@ export default function useUnifiedSidebarLinks() {
     };
 
     const activityLink: NavLink = {
-      title: 'AI activity',
+      title: 'meo_ai_activity',
       label: '',
       icon: Activity,
       id: 'activity',

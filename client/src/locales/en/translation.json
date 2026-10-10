@@ -3426,6 +3426,7 @@
   "meo_web_stream_failed": "The provider stream failed.",
   "meo_web_stream_incomplete": "The provider stream ended before completion.",
   "meo_web_chat_failed": "The chat request failed.",
+  "meo_ai_activity": "AI activity",
   "meo_web_history": "Conversation history",
   "meo_web_untitled_chat": "Untitled chat",
   "meo_web_conversation": "Conversation"
