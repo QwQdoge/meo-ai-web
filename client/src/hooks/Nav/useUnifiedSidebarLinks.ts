@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { BarChart3, MessagesSquare } from 'lucide-react';
+import { Activity, BarChart3, MessagesSquare } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
@@ -18,8 +18,6 @@ export default function useUnifiedSidebarLinks() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuthContext();
-  /** Selector instead of the full conversation atom: the links only depend on
-   * the endpoint, so parameter edits and other conversation writes stay out. */
   const endpoint = useRecoilValue(store.conversationEndpointByIndex(0)) ?? undefined;
   const { data: startupConfig } = useGetStartupConfig();
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
@@ -72,28 +70,41 @@ export default function useUnifiedSidebarLinks() {
       Component: ConversationsSection,
     };
 
-    if (
-      !insightsFeatureEnabled ||
-      (!isInsightsRoute && !isInsightsAccessLoading && insightsAccess?.access !== true)
-    ) {
-      return [conversationLink, ...sideNavLinks];
-    }
-
-    const insightsLink: NavLink = {
-      title: 'com_insights_navigation',
+    const activityLink: NavLink = {
+      title: 'AI activity',
       label: '',
-      icon: BarChart3,
-      id: 'insights',
-      disabled: !isInsightsRoute && isInsightsAccessLoading,
+      icon: Activity,
+      id: 'activity',
       onClick: () => {
-        if (!location.pathname.startsWith('/insights')) {
-          navigate('/insights');
+        if (!location.pathname.startsWith('/activity')) {
+          navigate('/activity');
         }
       },
     };
-    const mcpIndex = sideNavLinks.findIndex((link) => link.id === 'mcp-builder');
+
     const nextLinks = [...sideNavLinks];
-    nextLinks.splice(mcpIndex >= 0 ? mcpIndex + 1 : nextLinks.length, 0, insightsLink);
+    const mcpIndex = nextLinks.findIndex((link) => link.id === 'mcp-builder');
+    nextLinks.splice(mcpIndex >= 0 ? mcpIndex + 1 : nextLinks.length, 0, activityLink);
+
+    if (
+      insightsFeatureEnabled &&
+      (isInsightsRoute || isInsightsAccessLoading || insightsAccess?.access === true)
+    ) {
+      const insightsLink: NavLink = {
+        title: 'com_insights_navigation',
+        label: '',
+        icon: BarChart3,
+        id: 'insights',
+        disabled: !isInsightsRoute && isInsightsAccessLoading,
+        onClick: () => {
+          if (!location.pathname.startsWith('/insights')) {
+            navigate('/insights');
+          }
+        },
+      };
+      const activityIndex = nextLinks.findIndex((link) => link.id === 'activity');
+      nextLinks.splice(activityIndex >= 0 ? activityIndex + 1 : nextLinks.length, 0, insightsLink);
+    }
 
     return [conversationLink, ...nextLinks];
   }, [
