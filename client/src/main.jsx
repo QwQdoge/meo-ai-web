@@ -10,6 +10,34 @@ import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 
+const MEO_PRODUCT_NAME = 'Meo AI';
+const MEO_PRODUCT_DESCRIPTION =
+  'Meo AI is the browser companion for the MeoArch assistant, with multi-model chat, tools, synced conversations, and user-controlled providers.';
+
+function ensureMeta(property, content, attribute = 'name') {
+  let element = document.head.querySelector(`meta[${attribute}="${property}"]`);
+  if (!element) {
+    element = document.createElement('meta');
+    element.setAttribute(attribute, property);
+    document.head.appendChild(element);
+  }
+  element.setAttribute('content', content);
+}
+
+function applyMeoBrandMetadata() {
+  document.title = MEO_PRODUCT_NAME;
+  ensureMeta('description', MEO_PRODUCT_DESCRIPTION);
+  ensureMeta('application-name', MEO_PRODUCT_NAME);
+  ensureMeta('og:title', MEO_PRODUCT_NAME, 'property');
+  ensureMeta('og:description', MEO_PRODUCT_DESCRIPTION, 'property');
+  ensureMeta('og:type', 'website', 'property');
+  ensureMeta('twitter:card', 'summary');
+  ensureMeta('twitter:title', MEO_PRODUCT_NAME);
+  ensureMeta('twitter:description', MEO_PRODUCT_DESCRIPTION);
+}
+
+applyMeoBrandMetadata();
+
 const container = document.getElementById('root');
 const root = createRoot(container);
 
