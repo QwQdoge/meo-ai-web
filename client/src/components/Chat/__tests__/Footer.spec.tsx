@@ -23,12 +23,10 @@ jest.mock('~/hooks', () => ({
 }));
 
 describe('Footer', () => {
-  test('opens the default LibreChat site link in a new tab', () => {
+  test('shows the default Meo AI footer without inventing a product site link', () => {
     render(<Footer startupConfig={null} />);
-    const link = screen.getByRole('link', { name: /LibreChat/ });
-    expect(link).toHaveAttribute('href', 'https://librechat.ai');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByText(/Meo AI .*Every AI for Everyone\./)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Meo AI/ })).not.toBeInTheDocument();
   });
 
   test('opens custom footer markdown links in a new tab', () => {
