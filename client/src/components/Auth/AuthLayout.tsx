@@ -87,15 +87,17 @@ function AuthLayout({
     return null;
   };
 
+  const meoMarkUrl = new URL('assets/meo-ai-mark.svg', document.baseURI).href;
+
   return (
     <div className="bg-surface-primary relative flex min-h-screen flex-col">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        <div className="mt-6 h-12 w-full bg-cover">
           <img
-            src="assets/logo.svg"
+            src={meoMarkUrl}
             className="h-full w-full object-contain"
-            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
+            alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'Meo AI' })}
           />
         </div>
       </BlinkAnimation>
