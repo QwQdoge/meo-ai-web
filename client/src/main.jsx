@@ -14,6 +14,7 @@ const MEO_PRODUCT_NAME = 'Meo AI';
 const MEO_PRODUCT_DESCRIPTION =
   'Meo AI is the browser companion for the MeoArch assistant, with multi-model chat, tools, synced conversations, and user-controlled providers.';
 const MEO_FAVICON = 'assets/meo-ai-mark.svg';
+const MEO_MANIFEST = 'manifest.webmanifest';
 
 function ensureMeta(property, content, attribute = 'name') {
   let element = document.head.querySelector(`meta[${attribute}="${property}"]`);
@@ -25,13 +26,21 @@ function ensureMeta(property, content, attribute = 'name') {
   element.setAttribute('content', content);
 }
 
+function ensureLink(rel, href, type) {
+  let element = document.head.querySelector(`link[rel="${rel}"]`);
+  if (!element) {
+    element = document.createElement('link');
+    element.rel = rel;
+    document.head.appendChild(element);
+  }
+  element.href = href;
+  if (type) element.type = type;
+  return element;
+}
+
 function applyFavicon() {
   document.head.querySelectorAll('link[rel="icon"]').forEach((element) => element.remove());
-  const icon = document.createElement('link');
-  icon.rel = 'icon';
-  icon.type = 'image/svg+xml';
-  icon.href = MEO_FAVICON;
-  document.head.appendChild(icon);
+  ensureLink('icon', MEO_FAVICON, 'image/svg+xml');
 }
 
 function applyMeoBrandMetadata() {
@@ -44,6 +53,7 @@ function applyMeoBrandMetadata() {
   ensureMeta('twitter:card', 'summary');
   ensureMeta('twitter:title', MEO_PRODUCT_NAME);
   ensureMeta('twitter:description', MEO_PRODUCT_DESCRIPTION);
+  ensureLink('manifest', MEO_MANIFEST, 'application/manifest+json');
   applyFavicon();
 }
 
