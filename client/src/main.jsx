@@ -13,6 +13,7 @@ import 'katex/dist/contrib/copy-tex.js';
 const MEO_PRODUCT_NAME = 'Meo AI';
 const MEO_PRODUCT_DESCRIPTION =
   'Meo AI is the browser companion for the MeoArch assistant, with multi-model chat, tools, synced conversations, and user-controlled providers.';
+const MEO_FAVICON = 'assets/meo-ai-mark.svg';
 
 function ensureMeta(property, content, attribute = 'name') {
   let element = document.head.querySelector(`meta[${attribute}="${property}"]`);
@@ -22,6 +23,15 @@ function ensureMeta(property, content, attribute = 'name') {
     document.head.appendChild(element);
   }
   element.setAttribute('content', content);
+}
+
+function applyFavicon() {
+  document.head.querySelectorAll('link[rel="icon"]').forEach((element) => element.remove());
+  const icon = document.createElement('link');
+  icon.rel = 'icon';
+  icon.type = 'image/svg+xml';
+  icon.href = MEO_FAVICON;
+  document.head.appendChild(icon);
 }
 
 function applyMeoBrandMetadata() {
@@ -34,6 +44,7 @@ function applyMeoBrandMetadata() {
   ensureMeta('twitter:card', 'summary');
   ensureMeta('twitter:title', MEO_PRODUCT_NAME);
   ensureMeta('twitter:description', MEO_PRODUCT_DESCRIPTION);
+  applyFavicon();
 }
 
 applyMeoBrandMetadata();
