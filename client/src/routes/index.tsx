@@ -20,6 +20,7 @@ import dashboardRoutes from './Dashboard';
 import WithRum from '~/lib/rum/WithRum';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
+import NotFound from './NotFound';
 import Search from './Search';
 import Root from './Root';
 
@@ -195,6 +196,10 @@ export const router = createBrowserRouter(
                 {
                   path: 'agents/:category',
                   element: <MarketplaceRoute />,
+                },
+                {
+                  path: '*',
+                  element: <NotFound />,
                 },
               ],
             },
