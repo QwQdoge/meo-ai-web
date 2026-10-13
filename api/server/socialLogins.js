@@ -28,6 +28,34 @@ const { getLogStores } = require('~/cache');
 const DEFAULT_OPENID_REUSE_MAX_SESSION_AGE_MS = 15 * 60 * 1000;
 const getSessionExpiry = () => math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
 
+/**
+ * Meo Account is the product identity provider. The web app deliberately maps it
+ * onto LibreChat's battle-tested OpenID/PKCE path instead of introducing a second
+ * OAuth implementation. OpenID token material remains in the server-side session
+ * store and is never exposed to browser JavaScript.
+ *
+ * Explicit OPENID_* values always win so development/staging can override the
+ * defaults without changing source. Production still has to register the exact
+ * callback URI in the Meo Account/Supabase OAuth server.
+ */
+const applyMeoAccountOpenIdDefaults = () => {
+  const rawSupabaseUrl = process.env.MEO_ACCOUNT_SUPABASE_URL?.trim();
+  const clientId = process.env.MEO_ACCOUNT_CLIENT_ID?.trim();
+  if (!rawSupabaseUrl || !clientId) {
+    return false;
+  }
+
+  const supabaseUrl = rawSupabaseUrl.replace(/\/+$/, '');
+  process.env.OPENID_CLIENT_ID ||= clientId;
+  process.env.OPENID_ISSUER ||= `${supabaseUrl}/auth/v1`;
+  process.env.OPENID_SCOPE ||= 'openid email profile';
+  process.env.OPENID_USE_PKCE ||= 'true';
+  process.env.OPENID_REUSE_TOKENS ||= 'true';
+  process.env.OPENID_SESSION_SECRET ||= process.env.MEO_ACCOUNT_SESSION_SECRET;
+  process.env.OPENID_BUTTON_LABEL ||= 'Meo Account';
+  return true;
+};
+
 const getOpenIdSessionExpiry = () => {
   const sessionExpiry = getSessionExpiry();
   if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
@@ -82,6 +110,13 @@ async function configureOpenId(app, appConfig) {
  */
 const configureSocialLogins = async (app, appConfig) => {
   logger.info('Configuring social logins...');
+  const meoAccountConfigured = applyMeoAccountOpenIdDefaults();
+  if (meoAccountConfigured && !process.env.OPENID_SESSION_SECRET) {
+    logger.warn(
+      'Meo Account is configured but MEO_ACCOUNT_SESSION_SECRET/OPENID_SESSION_SECRET is missing; OpenID login remains disabled.',
+    );
+  }
+
   const stateOptions = {
     secret: process.env.JWT_SECRET,
     secureCookie: shouldUseSecureCookie(),
