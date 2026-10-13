@@ -24,6 +24,7 @@ const {
 } = require('~/server/middleware');
 
 const settings = require('./settings');
+const meo = require('./meo');
 const { updateUserStatefulCodeEnvironment } = require('~/models');
 
 const router = express.Router();
@@ -33,6 +34,7 @@ const updateUserPreferences = createUserPreferencesHandler({
 });
 
 router.use('/settings', settings);
+router.use('/meo', meo);
 router.get('/', requireJwtAuth, getUserController);
 router.patch('/preferences', requireJwtAuth, configMiddleware, updateUserPreferences);
 router.get('/terms', requireJwtAuth, getTermsStatusController);
