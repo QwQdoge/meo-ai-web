@@ -43,8 +43,8 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
-const loadMeoChatView = () =>
-  importWithRecovery(() => import('~/components/Meo/MeoChat')).then((m) => ({
+const loadMeoDesktopView = () =>
+  importWithRecovery(() => import('~/components/Meo/MeoDesktopApp')).then((m) => ({
     Component: m.default,
   }));
 
@@ -143,20 +143,20 @@ export const router = createBrowserRouter(
             },
             dashboardRoutes,
             {
+              path: 'new',
+              lazy: loadMeoDesktopView,
+            },
+            {
+              path: 'meo',
+              lazy: loadMeoDesktopView,
+            },
+            {
               path: '/',
               element: <Root />,
               children: [
                 {
                   index: true,
                   element: <RootRedirect />,
-                },
-                {
-                  path: 'new',
-                  lazy: loadMeoChatView,
-                },
-                {
-                  path: 'meo',
-                  lazy: loadMeoChatView,
                 },
                 {
                   path: 'c/:conversationId?',
