@@ -43,8 +43,8 @@ const loadSkillsView = () =>
     Component: m.default,
   }));
 
-const loadMeoDesktopView = () =>
-  importWithRecovery(() => import('~/components/Meo/MeoDesktopApp')).then((m) => ({
+const loadMeoView = () =>
+  importWithRecovery(() => import('~/components/Meo/MeoRoute')).then((m) => ({
     Component: m.default,
   }));
 
@@ -73,6 +73,16 @@ const baseHref = baseEl?.getAttribute('href') || '/';
 
 export const router = createBrowserRouter(
   [
+    {
+      path: 'new',
+      lazy: loadMeoView,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: 'meo',
+      lazy: loadMeoView,
+      errorElement: <RouteErrorBoundary />,
+    },
     {
       path: 'share/:shareId',
       element: <ShareRoute />,
@@ -143,14 +153,6 @@ export const router = createBrowserRouter(
             },
             dashboardRoutes,
             {
-              path: 'new',
-              lazy: loadMeoDesktopView,
-            },
-            {
-              path: 'meo',
-              lazy: loadMeoDesktopView,
-            },
-            {
               path: '/',
               element: <Root />,
               children: [
@@ -175,7 +177,6 @@ export const router = createBrowserRouter(
                   element: <Navigate to="/c/new" replace={true} />,
                 },
                 {
-                  /** Prompts are created from a dialog, so there is no "new" page to land on */
                   path: 'prompts/new',
                   element: <Navigate to="/c/new" replace={true} />,
                 },
