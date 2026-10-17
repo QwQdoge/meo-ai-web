@@ -1,65 +1,130 @@
 # Meo AI Web architecture
 
-This repository currently contains two Web surfaces, but only one is the long-term product.
+This repository currently contains two Web surfaces, but only one is the product.
 
 ## Canonical Web application
 
 The canonical Meo AI Web is the React/TypeScript application under `client/`.
 
-`chat.meoarch.org` must ultimately serve this application. New user-facing Meo product work belongs in the React client and shared contracts, backed by Meo API.
+`chat.meoarch.org` must ultimately serve this application. New user-facing Meo product work belongs in the React client and shared contracts, backed by Meo API / the shared Meo AI Core.
+
+The invariant is not that every platform uses one process. The invariant is that **business logic exists only once**.
 
 Canonical product topology:
 
 ```text
-Web (client/) ─────┐
-Desktop ───────────┼──> meo-api / shared Meo AI contracts ──> Neon
-Android ───────────┘
+                 Meo Account
+                      │
+              identity / OAuth
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+      Web Edge                Native auth
+          │                       │
+          └───────────┬───────────┘
+                      ▼
+                   meo-api
+                      │
+               Shared Meo AI Core
+                      │
+                    Neon
+                      │
+       ┌──────────────┼──────────────┐
+       │              │              │
+      Web          Desktop        Android
 ```
 
-Meo API and Neon are the authoritative backend for account-owned AI state such as conversations, Projects, Project memory, compact context, Skills metadata, usage, devices/remote runtime metadata and persistent AI file metadata.
+Meo API / the shared core and Neon are authoritative for account-owned AI state and behavior such as:
 
-Do not create a second authoritative Web-only store or business-logic implementation.
+- Conversation and messages
+- Project and Project Memory
+- Skills
+- AgentRun / Work
+- Device and remote-runtime metadata
+- model routing
+- tool approval
+- artifacts and persistent file metadata
+- usage and account AI statistics
+- compact context / summaries
+
+Do not create Web-only versions of those domains.
+
+Platform adapters are expected to differ where the platform itself differs. Examples include browser HttpOnly cookies, OAuth callback handling, Android secure storage, Linux KWallet, macOS Keychain, and Windows Credential Manager.
 
 ## Legacy Pages UI
 
 `meo-pages/public/*` is the legacy/static Pages UI that was used to bootstrap `chat.meoarch.org`.
 
-It must not receive new Chat, Projects, Work, Skills, Memory, Agent or model-routing product logic. Those features belong in the canonical React client plus shared API/contracts.
+It must not receive new Chat, Projects, Work, Skills, Memory, Agent, device, artifact or model-routing product logic. Those features belong in the canonical React client plus shared API/contracts.
 
-During the cutover, the old static files may remain in the repository for rollback/history, but they are not the source of truth and should not be used as the Pages build output once the React cutover is active.
+During the cutover, the old static files may remain in the repository for rollback/history, but they are not a client architecture and must not be used as the Pages build output once the React cutover is active.
 
-## Temporary browser edge
+`meo-pages/AGENTS.md` enforces this as a hard local rule.
 
-`meo-pages/functions/oauth/*` and the minimal same-origin Pages Functions may remain temporarily while browser OAuth/session handling is moved to Meo API or a dedicated thin `web-edge` layer.
+## Web edge / BFF boundary
 
-The edge layer may handle browser-specific concerns such as:
+A thin Web edge is a valid long-term component. Browser OAuth/session concerns do not need to be forced into the Meo API process itself.
 
-- OAuth PKCE start/callback
+The Web edge may own browser-specific transport/session concerns such as:
+
+- OAuth/OIDC PKCE start and callback
 - secure HttpOnly browser session/token cookies
-- same-origin forwarding where needed
+- CSRF/state handling
+- browser session refresh handoff
+- minimal same-origin API forwarding where required
 
-It must not own Meo AI business state or duplicate Chat/Projects/Skills/Work/Memory logic.
+It must **not** own Meo AI business state or duplicate Chat, Projects, Skills, Work, Memory, Agent, Device, artifact or model-routing logic.
 
 Target shape:
 
 ```text
-React UI
-  ├── /oauth/* -> temporary thin Pages auth edge
-  └── /api/*   -> meo-api
+Meo Account
+     │
+     ▼
+Web Edge / BFF
+  ├── /oauth/*  browser identity/session transport
+  └── /api/*    thin authenticated forwarding when needed
+     │
+     ▼
+   meo-api
+     │
+     ▼
+Shared Meo AI Core + Neon
 ```
 
-Long term, either Meo API owns the browser auth/session flow directly or a very small `web-edge` remains. In both cases, product behavior stays in Meo API/shared contracts and the React UI.
+Native platforms use their own auth/token storage adapters but enter the same Meo API and shared business contracts.
+
+## Work / remote execution
+
+Remote Work extends the shared backend rather than becoming a Web-specific feature:
+
+```text
+meo-api / AgentRun
+       │
+       ▼
+ Device Relay
+       │
+       ▼
+ meo-agentd
+       │
+       ▼
+AgentService
+```
+
+Web and Android may act as controllers for authenticated online devices. The remote protocol, permissions, AgentRun state and device model remain shared backend contracts.
 
 ## Cloudflare Pages cutover rule
 
-The current Pages project may keep `/meo-pages` as its build root temporarily so existing Functions continue to work, but its static build output must come from `client/`.
+The current Pages project may keep `/meo-pages` as its build root temporarily so existing browser edge Functions continue to work, but its static build output must come from `client/`.
 
 The intended migration order is:
 
-1. Build the React client and serve it on a preview deployment while keeping the existing OAuth Pages Functions.
-2. Smoke-test login, callback/session restore, Chat shell and Meo API access.
-3. Promote the same React build path to `chat.meoarch.org`.
-4. Remove the legacy `meo-pages/public/app.js`, `core.js`, `index.html` and `style.css` after the production rollback window.
-5. Move OAuth/session handling into Meo API or a dedicated thin `web-edge`, then remove the remaining legacy Pages structure.
+1. Connect the React client to Meo Account through the thin Web edge.
+2. Connect the React client to the shared Meo API contracts and make Chat work end-to-end.
+3. Connect Project, Skills and Work through those same shared APIs.
+4. Build the React client and serve it on a preview deployment while retaining the browser auth edge.
+5. Promote the same React build path to `chat.meoarch.org` and smoke-test login/session restore/API access.
+6. Remove the legacy `meo-pages/public/app.js`, `core.js`, `index.html` and `style.css` after the rollback window.
+7. Keep only a thin `web-edge` for browser auth/session transport if it remains useful; remove the rest of the legacy Pages structure.
 
 Do not add new product features to `meo-pages/public` while this migration is in progress.
