@@ -4,6 +4,8 @@
 
 `chat.meoarch.org` currently uses this Cloudflare Pages project. The migration target is to serve the React build from `client/` while temporarily retaining the same-origin Pages Functions for OAuth/session handling.
 
+The `cutover/react-web-pages` branch is the Pages preview lane for this migration. Production auto-deploy remains disabled while the React build is verified; the existing production deployment stays live until the cutover is explicitly promoted.
+
 ## React cutover deployment
 
 Cloudflare Pages keeps the project root at `meo-pages` temporarily so the existing `functions/oauth/*` and minimal `functions/api/*` browser edge continue to work.
