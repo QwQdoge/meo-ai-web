@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import type { MeoConsent } from './MeoConsentDialog';
 import MeoConsentDialog from './MeoConsentDialog';
-import { meoChatContext } from './chatContext';
 import { useMeoSession } from './session';
 
 type Connection = {
@@ -18,6 +17,54 @@ type Connection = {
 type Model = { id: string; name: string; description?: string };
 type Message = { role: 'user' | 'assistant'; content: string };
 type Conversation = { id: string; title: string; createdAt: string; updatedAt: string };
+type ApiConversation = {
+  id: string;
+  title?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+type ApiMessage = {
+  role?: string;
+  text?: string;
+  content?: unknown;
+};
+
+function normalizeConversation(value: ApiConversation): Conversation {
+  return {
+    id: value.id,
+    title: value.title ?? '',
+    createdAt: value.createdAt ?? value.created_at ?? '',
+    updatedAt: value.updatedAt ?? value.updated_at ?? '',
+  };
+}
+
+function messageText(value: ApiMessage): string {
+  if (typeof value.text === 'string') return value.text;
+  if (typeof value.content === 'string') return value.content;
+  if (!Array.isArray(value.content)) return '';
+  return value.content
+    .flatMap((part) => {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) return [];
+      const block = part as Record<string, unknown>;
+      return block.type === 'text' && typeof block.text === 'string' ? [block.text] : [];
+    })
+    .join('\n');
+}
+
+function requestError(value: unknown, status: number): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record.error === 'string') return record.error;
+    if (record.error && typeof record.error === 'object' && !Array.isArray(record.error)) {
+      const nested = record.error as Record<string, unknown>;
+      if (typeof nested.message === 'string') return nested.message;
+      if (typeof nested.code === 'string') return nested.code;
+    }
+  }
+  return `Request failed (${status})`;
+}
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -28,11 +75,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
     headers,
   });
   const value = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(
-      typeof value.error === 'string' ? value.error : `Request failed (${response.status})`,
-    );
-  }
+  if (!response.ok) throw new Error(requestError(value, response.status));
   return value as T;
 }
 
@@ -100,8 +143,8 @@ export default function MeoChat() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    json<{ connections: Connection[] }>('/api/meo/connections')
-      .then(({ connections: result }) => {
+    json<{ credentials: Connection[] }>('/api/meo/connections')
+      .then(({ credentials: result }) => {
         if (!active) return;
         setConnections(result);
         const requested = result.find((item) => item.id === requestedConnection);
@@ -132,13 +175,14 @@ export default function MeoChat() {
     historyGenerationRef.current += 1;
     setLoadingMore(false);
     setHistoryLoading(true);
-    json<{ conversations: Conversation[]; nextCursor: string | null }>('/api/meo/conversations')
+    json<{ conversations: ApiConversation[]; nextCursor: string | null }>('/api/meo/conversations')
       .then(({ conversations: result, nextCursor }) => {
         if (!active) return;
-        setHistory(result);
+        const normalized = result.map(normalizeConversation);
+        setHistory(normalized);
         setHistoryCursor(nextCursor);
         const savedId = localStorage.getItem(selectedConversationKey) ?? '';
-        const initial = result.find((item) => item.id === savedId) ?? result[0];
+        const initial = normalized.find((item) => item.id === savedId) ?? normalized[0];
         setActiveConversationId(initial?.id ?? '');
       })
       .catch((reason: Error) => active && setError(reason.message))
@@ -198,10 +242,19 @@ export default function MeoChat() {
       return;
     }
     setMessages([]);
-    json<{ messages: Message[] }>(
+    json<{ messages: ApiMessage[] }>(
       `/api/meo/conversations/${encodeURIComponent(activeConversationId)}/messages`,
     )
-      .then(({ messages: result }) => active && setMessages(result))
+      .then(({ messages: result }) => {
+        if (!active) return;
+        setMessages(
+          result.flatMap((message) =>
+            message.role === 'user' || message.role === 'assistant'
+              ? [{ role: message.role, content: messageText(message) }]
+              : [],
+          ),
+        );
+      })
       .catch((reason: Error) => active && setError(reason.message));
     return () => {
       active = false;
@@ -247,13 +300,14 @@ export default function MeoChat() {
     const generation = historyGenerationRef.current;
     setLoadingMore(true);
     try {
-      const page = await json<{ conversations: Conversation[]; nextCursor: string | null }>(
+      const page = await json<{ conversations: ApiConversation[]; nextCursor: string | null }>(
         `/api/meo/conversations?cursor=${encodeURIComponent(historyCursor)}`,
       );
       if (generation !== historyGenerationRef.current) return;
+      const normalized = page.conversations.map(normalizeConversation);
       setHistory((current) => {
         const existing = new Set(current.map((item) => item.id));
-        return [...current, ...page.conversations.filter((item) => !existing.has(item.id))];
+        return [...current, ...normalized.filter((item) => !existing.has(item.id))];
       });
       setHistoryCursor(page.nextCursor);
     } catch (reason) {
@@ -271,33 +325,20 @@ export default function MeoChat() {
     setError('');
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
-    const contextMessages = meoChatContext(nextMessages);
+    const contextConversationId = activeConversationId || null;
     try {
       const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', {
         method: 'POST',
-        body: JSON.stringify({ credentialId, model: model.trim(), messages: contextMessages }),
+        body: JSON.stringify({
+          credentialId,
+          model: model.trim(),
+          conversationId: contextConversationId,
+          prompt,
+        }),
       });
       const consent = prepared.consent;
       const approved = await requestConsent(consent);
       if (!approved) return;
-
-      let conversationId = activeConversationId;
-      if (!conversationId) {
-        const created = await json<{ conversation: Conversation }>('/api/meo/conversations', {
-          method: 'POST',
-          body: JSON.stringify({ title: prompt.slice(0, 80) }),
-        });
-        conversationId = created.conversation.id;
-        skipHistoryLoadRef.current = conversationId;
-        setHistory((current) => [created.conversation, ...current]);
-        setActiveConversationId(conversationId);
-      }
-      await json('/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages', {
-        method: 'POST',
-        body: JSON.stringify({ role: 'user', content: prompt }),
-      });
-      setMessages(nextMessages);
-      setDraft('');
 
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
@@ -308,18 +349,38 @@ export default function MeoChat() {
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
-          messages: contextMessages,
+          conversationId: contextConversationId,
+          prompt,
           consent,
         }),
         signal: abortController.signal,
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(
-          typeof body.error === 'string' ? body.error : `Chat failed (${response.status})`,
-        );
+        throw new Error(requestError(body, response.status));
       }
+
+      let conversationId = activeConversationId;
+      if (!conversationId) {
+        const created = await json<{ conversation: ApiConversation }>('/api/meo/conversations', {
+          method: 'POST',
+          body: JSON.stringify({ title: prompt.slice(0, 80) }),
+        });
+        const normalized = normalizeConversation(created.conversation);
+        conversationId = normalized.id;
+        skipHistoryLoadRef.current = conversationId;
+        setHistory((current) => [normalized, ...current]);
+        setActiveConversationId(conversationId);
+      }
+
+      await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ role: 'user', content: prompt }),
+      });
+      setMessages(nextMessages);
+      setDraft('');
       setMessages((current) => [...current, { role: 'assistant', content: '' }]);
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -332,9 +393,9 @@ export default function MeoChat() {
         while (boundary >= 0) {
           const block = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-          const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+          const eventName = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
           const data = block.match(/^data:\s*(.+)$/m)?.[1];
-          if (event === 'delta' && data) {
+          if (eventName === 'delta' && data) {
             const chunk = JSON.parse(data).text as string;
             assistantText += chunk;
             setMessages((current) =>
@@ -344,10 +405,10 @@ export default function MeoChat() {
                   : message,
               ),
             );
-          } else if (event === 'error' && data) {
+          } else if (eventName === 'error' && data) {
             const failure = JSON.parse(data) as { message?: string };
             throw new Error(failure.message ?? t('meo_web_stream_failed'));
-          } else if (event === 'done') {
+          } else if (eventName === 'done') {
             completed = true;
           }
           boundary = buffer.indexOf('\n\n');
@@ -370,6 +431,7 @@ export default function MeoChat() {
         ];
       });
     } catch (reason) {
+      streamAbortRef.current?.abort();
       if (!(reason instanceof DOMException && reason.name === 'AbortError')) {
         setError(reason instanceof Error ? reason.message : t('meo_web_chat_failed'));
       }
