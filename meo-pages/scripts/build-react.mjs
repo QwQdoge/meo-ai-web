@@ -10,10 +10,14 @@ const clientDist = path.join(repoRoot, 'client', 'dist');
 const pagesDist = path.join(pagesRoot, 'dist');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-function run(args) {
+function run(args, { production = false } = {}) {
+  const env = { ...process.env };
+  if (production) env.NODE_ENV = 'production';
+  else delete env.NODE_ENV;
+
   execFileSync(npm, args, {
     cwd: repoRoot,
-    env: { ...process.env, NODE_ENV: 'production' },
+    env,
     stdio: 'inherit',
   });
 }
@@ -21,10 +25,12 @@ function run(args) {
 // Cloudflare Pages still uses /meo-pages as its root so the existing
 // Pages Functions under meo-pages/functions keep handling browser OAuth.
 // The static application, however, is now built exclusively from client/.
-run(['ci']);
-run(['run', 'build:data-provider']);
-run(['run', 'build:client-package']);
-run(['run', 'build:client']);
+// Build tooling is intentionally installed even though the final bundle is
+// production output; packages such as tsdown and Vite are devDependencies.
+run(['ci', '--include=dev']);
+run(['run', 'build:data-provider'], { production: true });
+run(['run', 'build:client-package'], { production: true });
+run(['run', 'build:client'], { production: true });
 
 await access(path.join(clientDist, 'index.html'));
 await rm(pagesDist, { recursive: true, force: true });
