@@ -1,0 +1,35 @@
+name: Temporary Meo API artifact relay
+
+on:
+  push:
+    branches: [cutover/react-web-pages]
+    paths:
+      - .github/workflows/meo-api-artifact-relay.yml
+
+permissions:
+  contents: write
+
+jobs:
+  relay:
+    if: github.event.head_commit.message == 'chore(relay): stage Meo API extension artifact'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cutover/react-web-pages
+      - name: Fetch and verify extension bundle
+        run: |
+          mkdir -p tmp
+          curl --fail --silent --show-error --location \
+            https://b8648389.meo-api-extension-artifact.pages.dev/extension-entry.js \
+            --output tmp/meo-api-extension.js
+          echo 'ec799f85a28cb207085f623e331804af258ced5b4291204688e1ccd72aca1302  tmp/meo-api-extension.js' | sha256sum --check --strict
+          test "$(wc -c < tmp/meo-api-extension.js)" -eq 3416132
+      - name: Commit temporary public artifact
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tmp/meo-api-extension.js
+          git commit -m 'chore(relay): publish temporary Meo API extension bundle'
+          git push origin HEAD:cutover/react-web-pages
