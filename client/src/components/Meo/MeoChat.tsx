@@ -4,10 +4,9 @@ import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import type { MeoConsent } from './MeoConsentDialog';
-import { useAuthContext } from '~/hooks/AuthContext';
 import MeoConsentDialog from './MeoConsentDialog';
 import { meoChatContext } from './chatContext';
-import { meoRequestHeaders } from './request';
+import { useMeoSession } from './session';
 
 type Connection = {
   id: string;
@@ -19,12 +18,14 @@ type Connection = {
 type Model = { id: string; name: string; description?: string };
 type Message = { role: 'user' | 'assistant'; content: string };
 type Conversation = { id: string; title: string; createdAt: string; updatedAt: string };
-async function json<T>(url: string, token: string | undefined, init?: RequestInit): Promise<T> {
-  if (!token) throw new Error('Your Meo AI session is still loading. Try again in a moment.');
+
+async function json<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(url, {
     ...init,
     credentials: 'same-origin',
-    headers: meoRequestHeaders(token, init?.headers),
+    headers,
   });
   const value = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -37,7 +38,7 @@ async function json<T>(url: string, token: string | undefined, init?: RequestIni
 
 export default function MeoChat() {
   const { t } = useTranslation();
-  const { user, token } = useAuthContext();
+  const { user } = useMeoSession();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedConnection = searchParams.get('connection') ?? '';
   const requestedModel = searchParams.get('model') ?? '';
@@ -98,16 +99,8 @@ export default function MeoChat() {
 
   useEffect(() => {
     let active = true;
-    if (!token) {
-      setConnections([]);
-      setCredentialId('');
-      setModels([]);
-      return () => {
-        active = false;
-      };
-    }
     setLoading(true);
-    json<{ connections: Connection[] }>('/api/meo/connections', token)
+    json<{ connections: Connection[] }>('/api/meo/connections')
       .then(({ connections: result }) => {
         if (!active) return;
         setConnections(result);
@@ -132,26 +125,14 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [requestedConnection, requestedModel, t, token, updateDeepLink]);
+  }, [requestedConnection, requestedModel, t, updateDeepLink]);
 
   useEffect(() => {
     let active = true;
     historyGenerationRef.current += 1;
     setLoadingMore(false);
-    if (!token) {
-      setHistory([]);
-      setHistoryCursor(null);
-      setActiveConversationId('');
-      setMessages([]);
-      return () => {
-        active = false;
-      };
-    }
     setHistoryLoading(true);
-    json<{ conversations: Conversation[]; nextCursor: string | null }>(
-      '/api/meo/conversations',
-      token,
-    )
+    json<{ conversations: Conversation[]; nextCursor: string | null }>('/api/meo/conversations')
       .then(({ conversations: result, nextCursor }) => {
         if (!active) return;
         setHistory(result);
@@ -165,7 +146,7 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [selectedConversationKey, token]);
+  }, [selectedConversationKey]);
 
   useEffect(() => {
     if (!credentialId) {
@@ -173,12 +154,10 @@ export default function MeoChat() {
       setModelDiscovery('idle');
       return;
     }
-    if (!token) return;
     let active = true;
     setModelDiscovery('idle');
     json<{ supported: boolean; models: Model[] }>(
       `/api/meo/connections/${encodeURIComponent(credentialId)}/models`,
-      token,
     )
       .then((result) => {
         if (!active) return;
@@ -203,7 +182,7 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [connections, credentialId, requestedModel, t, token, updateDeepLink]);
+  }, [connections, credentialId, requestedModel, t, updateDeepLink]);
 
   useEffect(() => {
     let active = true;
@@ -213,10 +192,6 @@ export default function MeoChat() {
         active = false;
       };
     }
-    if (!token)
-      return () => {
-        active = false;
-      };
     localStorage.setItem(selectedConversationKey, activeConversationId);
     if (skipHistoryLoadRef.current === activeConversationId) {
       skipHistoryLoadRef.current = '';
@@ -225,14 +200,13 @@ export default function MeoChat() {
     setMessages([]);
     json<{ messages: Message[] }>(
       `/api/meo/conversations/${encodeURIComponent(activeConversationId)}/messages`,
-      token,
     )
       .then(({ messages: result }) => active && setMessages(result))
       .catch((reason: Error) => active && setError(reason.message));
     return () => {
       active = false;
     };
-  }, [activeConversationId, selectedConversationKey, token]);
+  }, [activeConversationId, selectedConversationKey]);
 
   const selected = useMemo(
     () => connections.find((item) => item.id === credentialId),
@@ -275,7 +249,6 @@ export default function MeoChat() {
     try {
       const page = await json<{ conversations: Conversation[]; nextCursor: string | null }>(
         `/api/meo/conversations?cursor=${encodeURIComponent(historyCursor)}`,
-        token,
       );
       if (generation !== historyGenerationRef.current) return;
       setHistory((current) => {
@@ -300,7 +273,7 @@ export default function MeoChat() {
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
     const contextMessages = meoChatContext(nextMessages);
     try {
-      const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', token, {
+      const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', {
         method: 'POST',
         body: JSON.stringify({ credentialId, model: model.trim(), messages: contextMessages }),
       });
@@ -310,27 +283,19 @@ export default function MeoChat() {
 
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const created = await json<{ conversation: Conversation }>(
-          '/api/meo/conversations',
-          token,
-          {
-            method: 'POST',
-            body: JSON.stringify({ title: prompt.slice(0, 80) }),
-          },
-        );
+        const created = await json<{ conversation: Conversation }>('/api/meo/conversations', {
+          method: 'POST',
+          body: JSON.stringify({ title: prompt.slice(0, 80) }),
+        });
         conversationId = created.conversation.id;
         skipHistoryLoadRef.current = conversationId;
         setHistory((current) => [created.conversation, ...current]);
         setActiveConversationId(conversationId);
       }
-      await json(
-        '/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages',
-        token,
-        {
-          method: 'POST',
-          body: JSON.stringify({ role: 'user', content: prompt }),
-        },
-      );
+      await json('/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages', {
+        method: 'POST',
+        body: JSON.stringify({ role: 'user', content: prompt }),
+      });
       setMessages(nextMessages);
       setDraft('');
 
@@ -339,7 +304,7 @@ export default function MeoChat() {
       const response = await fetch('/api/meo/chat/stream', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: meoRequestHeaders(token, { Accept: 'text/event-stream' }),
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
@@ -391,7 +356,7 @@ export default function MeoChat() {
       }
       if (!completed) throw new Error(t('meo_web_stream_incomplete'));
       if (assistantText) {
-        await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, token, {
+        await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, {
           method: 'POST',
           body: JSON.stringify({ role: 'assistant', content: assistantText }),
         });
