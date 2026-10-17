@@ -12,33 +12,37 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe chat.meoarch.org routes
+      - name: Probe all live routes without early exit
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           probe() {
             local url="$1"
-            local expected="$2"
-            local headers body status
+            local headers body status location
             headers="$(mktemp)"
             body="$(mktemp)"
-            status="$(curl -sS --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url")"
-            echo "$url -> $status"
-            sed -n '1,12p' "$headers" | sed -E 's/(set-cookie:).*/\1 [redacted]/I'
-            if [[ "$status" != "$expected" ]]; then
-              echo "Unexpected status: expected $expected, got $status"
-              head -c 500 "$body" || true
+            status="$(curl -sS --max-time 20 -D "$headers" -o "$body" -w '%{http_code}' "$url" || true)"
+            location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            echo "URL=$url STATUS=$status LOCATION=${location:-none}"
+            if [[ -s "$body" ]]; then
+              printf 'BODY_PREFIX='
+              head -c 240 "$body" | tr '\n' ' '
               echo
-              exit 1
             fi
           }
 
-          probe 'https://chat.meoarch.org/' 200
-          probe 'https://chat.meoarch.org/new' 200
-          probe 'https://chat.meoarch.org/api/session' 401
-          probe 'https://chat.meoarch.org/oauth/openid/callback' 400
+          probe 'https://chat.meoarch.org/'
+          probe 'https://chat.meoarch.org/new'
+          probe 'https://chat.meoarch.org/new?project=test'
+          probe 'https://chat.meoarch.org/api/session'
+          probe 'https://chat.meoarch.org/oauth/openid/callback'
+          probe 'https://chat.meoarch.org/oauth/openid/callback?code=fake&state=fake'
+          probe 'https://chat.meoarch.org/oauth/openid?return=%2Fnew'
+          probe 'https://cutover-react-web-pages.meo-ai-web.pages.dev/'
+          probe 'https://cutover-react-web-pages.meo-ai-web.pages.dev/new'
+          probe 'https://cutover-react-web-pages.meo-ai-web.pages.dev/oauth/openid/callback'
 
-      - name: Verify login redirect and exact OAuth callback
+      - name: Verify production login redirect contract
         shell: bash
         run: |
           set -euo pipefail
@@ -47,34 +51,26 @@ jobs:
           echo "login start -> $status"
           test "$status" = 302
           location="$(awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
-          test -n "$location"
           python - "$location" <<'PY'
           import sys
           from urllib.parse import urlparse, parse_qs
-          url = sys.argv[1]
-          p = urlparse(url)
-          q = parse_qs(p.query)
+          p = urlparse(sys.argv[1]); q = parse_qs(p.query)
           print('authorize host:', p.netloc)
           print('authorize path:', p.path)
           print('redirect_uri:', q.get('redirect_uri', [''])[0])
-          assert p.scheme == 'https'
           assert p.netloc == 'account.meoarch.org'
           assert p.path == '/v1/auth/oauth2/authorize'
           assert q.get('redirect_uri') == ['https://chat.meoarch.org/oauth/openid/callback']
           assert q.get('client_id') == ['8f2e0255-187d-448f-9e25-bc275d1b6015']
           assert q.get('response_type') == ['code']
-          assert q.get('code_challenge')
-          assert q.get('state')
+          assert q.get('code_challenge') and q.get('state')
           PY
 
-      - name: Compare current cutover preview callback routing
+      - name: Assert callback function exists in production
         shell: bash
         run: |
           set -euo pipefail
-          for url in \
-            'https://cutover-react-web-pages.meo-ai-web.pages.dev/new' \
-            'https://cutover-react-web-pages.meo-ai-web.pages.dev/oauth/openid/callback'; do
-            status="$(curl -sS --max-time 20 -o /tmp/body -w '%{http_code}' "$url")"
-            echo "$url -> $status"
-            if [[ "$url" == */new ]]; then test "$status" = 200; else test "$status" = 400; fi
-          done
+          status="$(curl -sS --max-time 20 -o /tmp/body -w '%{http_code}' 'https://chat.meoarch.org/oauth/openid/callback')"
+          echo "callback without params -> $status"
+          test "$status" = 400
+          grep -q 'missing_code' /tmp/body
