@@ -57,3 +57,11 @@ test('successful server settings are passed through unchanged',async()=>{
     assert.deepEqual(await response.json(),saved);
   });
 });
+
+test('other HTTP 404 errors on the collection are not transformed', async()=>{
+  await withFetch(async()=>Response.json({error:{code:'account_record_missing'}},{status:404}),async()=>{
+    const response=await onRequest({request:await request('/settings'),env:environment});
+    assert.equal(response.status,404);
+    assert.equal((await response.json()).error.code,'account_record_missing');
+  });
+});
