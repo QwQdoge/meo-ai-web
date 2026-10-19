@@ -58,7 +58,7 @@ test('stream preserves broker SSE and explicit one-time consent',async()=>{
   },async()=>{
     const response=await onRequest({request:await request('/chat/stream',{...prompt,consent}),env:environment});
     assert.equal(response.status,200);
-    assert.match(response.headers.get('Content-Type'),'text/event-stream');
+    assert.match(response.headers.get('Content-Type'),/text\/event-stream/);
     assert.match(await response.text(),/event: done/);
   });
   assert.equal(calls[1].body.action,'stream_invoke');
