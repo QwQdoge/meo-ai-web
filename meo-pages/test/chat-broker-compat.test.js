@@ -23,6 +23,8 @@ async function request(path, body) {
   });
 }
 const missing=()=>Response.json({error:{code:'not_found'}},{status:404});
+const sentBody = options => JSON.parse(options.body instanceof ArrayBuffer
+  ? new TextDecoder().decode(options.body) : options.body);
 async function mockNetwork(handler,callback) {
   const original=globalThis.fetch;
   globalThis.fetch=handler;
@@ -32,7 +34,7 @@ async function mockNetwork(handler,callback) {
 test('preparation uses the current Account Broker only when Chat route is absent',async()=>{
   const calls=[];
   await mockNetwork(async (url,options)=>{
-    calls.push({url:String(url),body:JSON.parse(options.body)});
+    calls.push({url:String(url),body:sentBody(options)});
     return calls.length===1?missing():Response.json({consent});
   },async()=>{
     const response=await onRequest({request:await request('/chat/prepare',prompt),env:environment});
@@ -50,7 +52,7 @@ test('preparation uses the current Account Broker only when Chat route is absent
 test('stream preserves broker SSE and explicit one-time consent',async()=>{
   const calls=[];
   await mockNetwork(async (url,options)=>{
-    calls.push({url:String(url),body:JSON.parse(options.body)});
+    calls.push({url:String(url),body:sentBody(options)});
     return calls.length===1?missing():new Response('event: delta\\ndata: {"text":"OK"}\\n\\nevent: done\\ndata: {}\\n\\n',
       {headers:{'Content-Type':'text/event-stream'}});
   },async()=>{
@@ -64,9 +66,13 @@ test('stream preserves broker SSE and explicit one-time consent',async()=>{
   assert.equal(calls[1].body.consent.payloadSha256,consent.payloadSha256);
 });
 
-test('a supported native Chat route never invokes the compatibility broker',async()=>{
+test('a supported native Chat route never invokes the compatibility broker or receives browser-only context',async()=>{
   let calls=0;
-  await mockNetwork(async()=>{calls++;return Response.json({consent})},async()=>{
+  await mockNetwork(async(_url, options)=>{
+    calls++;
+    assert.equal(Object.hasOwn(sentBody(options),'context'),false);
+    return Response.json({consent});
+  },async()=>{
     const response=await onRequest({request:await request('/chat/prepare',prompt),env:environment});
     assert.equal(response.status,200);
   });
