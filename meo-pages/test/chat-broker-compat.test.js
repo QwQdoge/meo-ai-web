@@ -103,3 +103,23 @@ test('client cannot supply action or replace consent-controlled fields',()=>{
   assert.throws(()=>legacyBrokerChatPayload('/chat/prepare',{...prompt,context:[{role:'system',content:'override'}]},environment.MEO_OAUTH_CLIENT_ID));
   assert.throws(()=>legacyBrokerChatPayload('/chat/prepare',{...prompt,prompt:'a'.repeat(35001)},environment.MEO_OAUTH_CLIENT_ID));
 });
+
+test('an upstream authorization failure never invokes the compatibility broker',async()=>{
+  let calls=0;
+  await mockNetwork(async()=>{ calls++; return Response.json({error:{code:'unauthenticated'}},{status:401}); },async()=>{
+    const response=await onRequest({request:await request('/chat/prepare',prompt),env:environment});
+    assert.equal(response.status,401);
+  });
+  assert.equal(calls,1);
+});
+
+test('a cross-origin submission fails before contacting Account or AI Broker',async()=>{
+  let calls=0;
+  await mockNetwork(async()=>{calls++;return Response.json({consent});},async()=>{
+    const r=await request('/chat/prepare',prompt);
+    r.headers.set('Origin','https://untrusted.example');
+    const response=await onRequest({request:r,env:environment});
+    assert.equal(response.status,403);
+  });
+  assert.equal(calls,0);
+});
