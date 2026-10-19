@@ -1,5 +1,6 @@
 import { apiUrl, brokerUrl, loadSession } from '../../_lib/account.js';
 import { clearCookies } from '../../_lib/session.js';
+import { legacyBrokerChatPayload } from '../../_lib/legacy-chat.js';
 
 const jsonHeaders = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -128,13 +129,46 @@ export async function onRequest({ request, env }) {
     body = await request.arrayBuffer();
   }
 
-  const upstream = await fetch(route.url, {
+  let upstream = await fetch(route.url, {
     method: route.method,
     headers: forwardedHeaders(request, session.accessToken, body != null),
     body: ['GET', 'HEAD'].includes(route.method) ? undefined : body,
     redirect: 'manual',
     signal: request.signal,
   });
+
+  // v53 production API omitted the chat route from its deployed bundle.
+  // Only fall back if the upstream explicitly says the ROUTE is missing,
+  // never for permission errors or missing account-owned resources. Once a
+  // compatible API is deployed its native chat implementation takes priority.
+  if (['/chat/prepare', '/chat/stream'].includes(relativePath) &&
+      upstream.status === 404 && body instanceof ArrayBuffer) {
+    const upstreamError = await upstream.clone().json().catch(() => null);
+    if (upstreamError?.error?.code === 'not_found') {
+      let parsed;
+      try {
+        parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+      } catch {
+        return json({ error: { code: 'invalid_request' } }, 400);
+      }
+      let payload;
+      try {
+        payload = legacyBrokerChatPayload(
+          relativePath, parsed, env.MEO_OAUTH_CLIENT_ID,
+        );
+      } catch {
+        return json({ error: { code: 'invalid_request' } }, 400);
+      }
+      await upstream.body?.cancel().catch(() => undefined);
+      upstream = await fetch(brokerUrl(env), {
+        method: 'POST',
+        headers: forwardedHeaders(request, session.accessToken, true),
+        body: JSON.stringify(payload),
+        redirect: 'manual',
+        signal: request.signal,
+      });
+    }
+  }
 
   const response = new Response(upstream.body, {
     status: upstream.status,
