@@ -1,4 +1,4 @@
-> **Source consolidation (2026-10-18):** New Meo Web product development now lives in [`meo-ai/meo/web/client`](https://github.com/QwQdoge/meo-ai/tree/main/meo/web/client), beside desktop, Android, UI Schema and Rust Core. The import is merged on `meo-ai` `main`. This repository and its existing production deployment remain rollback/history until explicit cutover. Do not continue parallel feature development here.
+> **DEPRECATED (2026-10-20):** This repository is no longer used. All Meo AI clients (Web, desktop, Android) and the shared Rust core live in [`QwQdoge/meo-ai`](https://github.com/QwQdoge/meo-ai) (`meo/web/client` for Web). This repository is archived read-only for history; the existing Pages deployment is untouched until it is replaced from `meo-ai`.
 
 # Meo AI Web
 
